@@ -113,8 +113,10 @@ docker run -d \
 Use a version tag such as `ghcr.io/kwatson/jmap-screener:v0.1.0` if you want to
 pin a specific release.
 
-Set `db.path = "/data/screener.db"` in your config so the database persists across
-container restarts.
+Set `db.path = "/data/screener.db"` in your config so the SQLite database is
+stored on the mounted Docker volume. The default `screener.db` path is relative
+to the container working directory and is not suitable for persistent Docker
+deployments.
 
 The container runs as UID/GID `65532`. A Docker-managed volume, as shown above,
 works without extra permission setup because Docker initializes it from the image's
