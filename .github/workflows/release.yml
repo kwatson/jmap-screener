@@ -1,0 +1,110 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, including the leading v, such as v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Validate version and changelog
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF_TYPE" != "branch" || "$GITHUB_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+            echo "releases must be dispatched from the default branch ($DEFAULT_BRANCH)" >&2
+            exit 1
+          fi
+
+          git fetch --prune origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          DEFAULT_SHA="$(git rev-parse "origin/$DEFAULT_BRANCH")"
+          if [[ "$GITHUB_SHA" != "$DEFAULT_SHA" ]]; then
+            echo "workflow ref $GITHUB_SHA is not the latest $DEFAULT_BRANCH ref ($DEFAULT_SHA)" >&2
+            exit 1
+          fi
+
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version must be a semantic version with a leading v, such as v0.1.0" >&2
+            exit 1
+          fi
+
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "tag $VERSION already exists" >&2
+            exit 1
+          fi
+
+          awk -v version="$VERSION" '
+            /^##[[:space:]]+/ {
+              header = $0
+              sub(/^##[[:space:]]+/, "", header)
+              separator = substr(header, length(version) + 1, 1)
+              if (substr(header, 1, length(version)) == version && (separator == "" || separator ~ /[[:space:]-]/)) { in_section = 1; next }
+              if (in_section) { exit }
+            }
+            in_section { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "CHANGELOG.md does not contain a non-empty section for $VERSION" >&2
+            exit 1
+          fi
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ inputs.version }}
+
+      - name: Create GitHub release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --notes-file release-notes.md

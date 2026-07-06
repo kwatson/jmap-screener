@@ -1,0 +1,34 @@
+# JMAP Screener - Example Configuration
+# Copy to config.toml and fill in your values
+
+[jmap]
+url = "https://mail.example.com/jmap/"
+token = "YOUR_USER_API_TOKEN_HERE"
+# Optional. If omitted, the daemon uses the primary mail account from JMAP session discovery.
+# account_id = "p"
+push_enabled = true
+
+[db]
+path = "screener.db"
+
+[daemon]
+poll_interval_seconds = 300
+
+[monitor]
+screener_mailbox = "Screener"
+junk_mailbox = "Junk Mail"
+spam_score_threshold = 5
+excluded_senders = [
+    "mailer-daemon@",
+    "postmaster@"
+]
+
+[rescue]
+enabled = false
+batch_size = 100
+
+[health]
+port = 8080
+
+[logging]
+level = "info"

@@ -1,0 +1,38 @@
+# Local configuration and secrets
+config.toml
+.env
+.env.*
+!.env.example
+
+# Runtime data
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+data/
+
+# Go build and test artifacts
+/screener
+/jmap-screener
+*.test
+coverage.out
+coverage.html
+
+# Dependencies and package manager output
+node_modules/
+**/node_modules/
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+.opencode/
+
