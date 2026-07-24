@@ -36,6 +36,95 @@ func TestWellKnownJMAPURL_RelativeInvalid(t *testing.T) {
 	}
 }
 
+func TestClientRewriteAdvertisedURL(t *testing.T) {
+	client := NewClient("https://jmap.example.com/jmap/", "token", "acc1")
+	if err := client.SetAdvertisedHostOverride("jmap.example.com"); err != nil {
+		t.Fatalf("SetAdvertisedHostOverride() error: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "https upload",
+			in:   "https://mail.example.net:8443/jmap/upload/acc1/?type=sieve",
+			want: "https://jmap.example.com:8443/jmap/upload/acc1/?type=sieve",
+		},
+		{
+			name: "websocket",
+			in:   "wss://mail.example.net/jmap/ws",
+			want: "wss://jmap.example.com/jmap/ws",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := client.RewriteAdvertisedURL(tt.in)
+			if err != nil {
+				t.Fatalf("RewriteAdvertisedURL() error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("RewriteAdvertisedURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClientRewriteAdvertisedURLDisabledPreservesInput(t *testing.T) {
+	client := NewClient("https://mail.example.com/jmap/", "token", "acc1")
+	rawURL := ":// deliberately not parsed"
+	got, err := client.RewriteAdvertisedURL(rawURL)
+	if err != nil {
+		t.Fatalf("RewriteAdvertisedURL() error: %v", err)
+	}
+	if got != rawURL {
+		t.Errorf("RewriteAdvertisedURL() = %q, want unchanged %q", got, rawURL)
+	}
+}
+
+func TestClientSetAdvertisedHostOverrideValidation(t *testing.T) {
+	tests := []struct {
+		host    string
+		wantErr bool
+	}{
+		{host: "jmap.example.com"},
+		{host: "127.0.0.1"},
+		{host: "[2001:db8::1]"},
+		{host: "https://jmap.example.com", wantErr: true},
+		{host: "jmap.example.com:443", wantErr: true},
+		{host: "user@jmap.example.com", wantErr: true},
+		{host: "jmap.example.com/path", wantErr: true},
+		{host: "jmáp.example", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			client := NewClient("https://mail.example.com/jmap/", "token", "acc1")
+			err := client.SetAdvertisedHostOverride(tt.host)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestClientRewriteAdvertisedURLIPv6PreservesPort(t *testing.T) {
+	client := NewClient("https://mail.example.com/jmap/", "token", "acc1")
+	if err := client.SetAdvertisedHostOverride("2001:db8::1"); err != nil {
+		t.Fatalf("SetAdvertisedHostOverride() error: %v", err)
+	}
+	got, err := client.RewriteAdvertisedURL("wss://mail.example.com:8443/jmap/ws")
+	if err != nil {
+		t.Fatalf("RewriteAdvertisedURL() error: %v", err)
+	}
+	if want := "wss://[2001:db8::1]:8443/jmap/ws"; got != want {
+		t.Errorf("RewriteAdvertisedURL() = %q, want %q", got, want)
+	}
+}
+
 func TestClient_DiscoverSession(t *testing.T) {
 	url, closeServer := testServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/.well-known/jmap" {

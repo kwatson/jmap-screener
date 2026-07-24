@@ -17,6 +17,7 @@ func TestLoad_FullConfig(t *testing.T) {
 url = "https://example.com/api"
 token = "test-token"
 account_id = "test@example.com"
+advertised_host_override = "jmap.example.com"
 
 [db]
 path = "/tmp/test.db"
@@ -54,6 +55,9 @@ level = "debug"
 	}
 	if cfg.JMAP.AccountID != "test@example.com" {
 		t.Errorf("JMAP.AccountID = %q, want %q", cfg.JMAP.AccountID, "test@example.com")
+	}
+	if cfg.JMAP.AdvertisedHostOverride != "jmap.example.com" {
+		t.Errorf("JMAP.AdvertisedHostOverride = %q, want jmap.example.com", cfg.JMAP.AdvertisedHostOverride)
 	}
 	if !cfg.JMAP.PushEnabled {
 		t.Error("JMAP.PushEnabled = false, want true")
@@ -113,6 +117,9 @@ token = "test-token"
 	}
 	if cfg.JMAP.AccountID != "" {
 		t.Errorf("JMAP.AccountID = %q, want empty for auto-discovery", cfg.JMAP.AccountID)
+	}
+	if cfg.JMAP.AdvertisedHostOverride != "" {
+		t.Errorf("JMAP.AdvertisedHostOverride = %q, want empty", cfg.JMAP.AdvertisedHostOverride)
 	}
 	if !cfg.JMAP.PushEnabled {
 		t.Error("JMAP.PushEnabled = false, want true")
@@ -235,6 +242,43 @@ token = "test-token"
 	}
 	if cfg.JMAP.AccountID != "user@example.com" {
 		t.Errorf("JMAP.AccountID = %q, want %q", cfg.JMAP.AccountID, "user@example.com")
+	}
+}
+
+func TestLoad_EnvOverrideAdvertisedHost(t *testing.T) {
+	cleanScreenerEnv(t)
+	t.Setenv("SCREENER_JMAP_ADVERTISED_HOST_OVERRIDE", "jmap.example.com")
+
+	path := writeTempTOML(t, `
+[jmap]
+url = "https://example.com/api"
+token = "test-token"
+advertised_host_override = "file.example.com"
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.JMAP.AdvertisedHostOverride != "jmap.example.com" {
+		t.Errorf("JMAP.AdvertisedHostOverride = %q, want env value", cfg.JMAP.AdvertisedHostOverride)
+	}
+}
+
+func TestLoad_EmptyEnvDoesNotClearAdvertisedHost(t *testing.T) {
+	cleanScreenerEnv(t)
+
+	path := writeTempTOML(t, `
+[jmap]
+url = "https://example.com/api"
+token = "test-token"
+advertised_host_override = "file.example.com"
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.JMAP.AdvertisedHostOverride != "file.example.com" {
+		t.Errorf("JMAP.AdvertisedHostOverride = %q, want TOML value", cfg.JMAP.AdvertisedHostOverride)
 	}
 }
 
@@ -551,6 +595,7 @@ func cleanScreenerEnv(t *testing.T) {
 	t.Setenv("SCREENER_JMAP_URL", "")
 	t.Setenv("SCREENER_JMAP_TOKEN", "")
 	t.Setenv("SCREENER_JMAP_ACCOUNT_ID", "")
+	t.Setenv("SCREENER_JMAP_ADVERTISED_HOST_OVERRIDE", "")
 	t.Setenv("SCREENER_JMAP_PUSH_ENABLED", "")
 	t.Setenv("SCREENER_DB_PATH", "")
 	t.Setenv("SCREENER_MONITOR_SCREENER_MAILBOX", "")

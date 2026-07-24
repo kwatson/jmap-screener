@@ -23,11 +23,26 @@ const (
 
 // Client is a JMAP API client connected to a single user account.
 type Client struct {
-	URL               string
-	Token             string
-	AccountID         string
-	http              *http.Client
-	uploadURLTemplate string
+	URL                    string
+	Token                  string
+	AccountID              string
+	http                   *http.Client
+	uploadURLTemplate      string
+	uploadURLTemplateErr   error
+	advertisedHostOverride string
+}
+
+func (c *Client) SetAdvertisedHostOverride(host string) error {
+	normalized, err := normalizeAdvertisedHostname(host)
+	if err != nil {
+		return err
+	}
+	c.advertisedHostOverride = normalized
+	return nil
+}
+
+func (c *Client) RewriteAdvertisedURL(rawURL string) (string, error) {
+	return rewriteURLHostname(rawURL, c.advertisedHostOverride)
 }
 
 // NewClient creates a new JMAP client.
@@ -42,9 +57,11 @@ func NewClient(url, token, accountID string) *Client {
 
 func (c *Client) SetUploadURLTemplate(template string) error {
 	if _, err := ResolveUploadURL(template, c.AccountID); err != nil {
+		c.uploadURLTemplateErr = err
 		return err
 	}
 	c.uploadURLTemplate = template
+	c.uploadURLTemplateErr = nil
 	return nil
 }
 
@@ -372,9 +389,22 @@ func (c *Client) uploadSieveScript(contents string) (string, error) {
 }
 
 func (c *Client) uploadURL() (string, error) {
+	if c.advertisedHostOverride != "" && c.uploadURLTemplateErr != nil {
+		return "", fmt.Errorf("resolve advertised upload URL: %w", c.uploadURLTemplateErr)
+	}
 	if c.uploadURLTemplate != "" {
-		if uploadURL, err := ResolveUploadURL(c.uploadURLTemplate, c.AccountID); err == nil {
+		uploadURL, err := ResolveUploadURL(c.uploadURLTemplate, c.AccountID)
+		if err == nil {
+			uploadURL, err = c.RewriteAdvertisedURL(uploadURL)
+			if err == nil {
+				err = validateUploadURL(uploadURL)
+			}
+		}
+		if err == nil {
 			return uploadURL, nil
+		}
+		if c.advertisedHostOverride != "" {
+			return "", fmt.Errorf("resolve advertised upload URL: %w", err)
 		}
 	}
 

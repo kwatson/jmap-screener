@@ -6,6 +6,8 @@ url = "https://mail.example.com/jmap/"
 token = "YOUR_USER_API_TOKEN_HERE"
 # Optional. If omitted, the daemon uses the primary mail account from JMAP session discovery.
 # account_id = "p"
+# Optional. Override the host in upload and WebSocket URLs advertised by JMAP discovery.
+# advertised_host_override = "jmap.example.com"
 push_enabled = true
 
 [db]

@@ -27,7 +27,7 @@ type pushMessage struct {
 }
 
 func WatchPush(ctx context.Context, wsURL, token, accountID string, events chan<- struct{}, connected, verified *atomic.Bool) {
-	if err := validateWebSocketURL(wsURL); err != nil {
+	if err := ValidateWebSocketURL(wsURL); err != nil {
 		slog.Warn("jmap push disabled", "error", err)
 		return
 	}
@@ -175,7 +175,7 @@ func SendPushEvent(events chan<- struct{}) {
 	}
 }
 
-func validateWebSocketURL(rawURL string) error {
+func ValidateWebSocketURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("parse websocket url: %w", err)

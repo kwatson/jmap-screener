@@ -76,19 +76,19 @@ func TestSendPushEventCoalesces(t *testing.T) {
 }
 
 func TestValidateWebSocketURL(t *testing.T) {
-	if err := validateWebSocketURL("wss://mail.example.com/jmap/ws"); err != nil {
+	if err := ValidateWebSocketURL("wss://mail.example.com/jmap/ws"); err != nil {
 		t.Fatalf("validateWebSocketURL(wss) error: %v", err)
 	}
-	if err := validateWebSocketURL("ws://localhost/jmap/ws"); err != nil {
+	if err := ValidateWebSocketURL("ws://localhost/jmap/ws"); err != nil {
 		t.Fatalf("validateWebSocketURL(localhost ws) error: %v", err)
 	}
-	if err := validateWebSocketURL("ws://mail.example.com/jmap/ws"); err == nil {
+	if err := ValidateWebSocketURL("ws://mail.example.com/jmap/ws"); err == nil {
 		t.Fatal("expected error for non-local ws URL")
 	}
-	if err := validateWebSocketURL("wss:mail.example.com/jmap/ws"); err == nil {
+	if err := ValidateWebSocketURL("wss:mail.example.com/jmap/ws"); err == nil {
 		t.Fatal("expected error for opaque wss URL")
 	}
-	if err := validateWebSocketURL("wss:///jmap/ws"); err == nil {
+	if err := ValidateWebSocketURL("wss:///jmap/ws"); err == nil {
 		t.Fatal("expected error for wss URL without host")
 	}
 }

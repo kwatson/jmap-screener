@@ -23,10 +23,11 @@ type Config struct {
 }
 
 type JMAPConfig struct {
-	URL         string `toml:"url"`
-	Token       string `toml:"token"`
-	AccountID   string `toml:"account_id"`
-	PushEnabled bool   `toml:"push_enabled"`
+	URL                    string `toml:"url"`
+	Token                  string `toml:"token"`
+	AccountID              string `toml:"account_id"`
+	AdvertisedHostOverride string `toml:"advertised_host_override"`
+	PushEnabled            bool   `toml:"push_enabled"`
 }
 
 type DBConfig struct {
@@ -114,6 +115,9 @@ func LoadWithOptions(path string, explicit bool) (*Config, error) {
 	}
 	if v := os.Getenv("SCREENER_JMAP_ACCOUNT_ID"); v != "" {
 		cfg.JMAP.AccountID = v
+	}
+	if v := os.Getenv("SCREENER_JMAP_ADVERTISED_HOST_OVERRIDE"); v != "" {
+		cfg.JMAP.AdvertisedHostOverride = v
 	}
 	if v := os.Getenv("SCREENER_JMAP_PUSH_ENABLED"); v != "" {
 		enabled, err := strconv.ParseBool(v)

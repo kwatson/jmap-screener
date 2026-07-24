@@ -621,6 +621,50 @@ func TestClientUploadURLPrefersDiscoveredTemplate(t *testing.T) {
 	}
 }
 
+func TestClientUploadURLRewritesDiscoveredHostAfterExpansion(t *testing.T) {
+	client := NewClient("https://api.example.com/jmap", "token", "user+tag@example.com 100%/inbox")
+	if err := client.SetAdvertisedHostOverride("jmap.example.com"); err != nil {
+		t.Fatalf("SetAdvertisedHostOverride() error: %v", err)
+	}
+	if err := client.SetUploadURLTemplate("https://mail.example.net/jmap/upload/{accountId}/?type=sieve"); err != nil {
+		t.Fatalf("SetUploadURLTemplate() error: %v", err)
+	}
+	got, err := client.uploadURL()
+	if err != nil {
+		t.Fatalf("uploadURL() error: %v", err)
+	}
+	want := "https://jmap.example.com/jmap/upload/user%2Btag%40example.com%20100%25%2Finbox/?type=sieve"
+	if got != want {
+		t.Errorf("uploadURL() = %q, want %q", got, want)
+	}
+}
+
+func TestClientUploadURLOverrideRejectsRemoteHTTP(t *testing.T) {
+	client := newTestClient("https://api.example.com/jmap")
+	if err := client.SetAdvertisedHostOverride("jmap.example.com"); err != nil {
+		t.Fatalf("SetAdvertisedHostOverride() error: %v", err)
+	}
+	if err := client.SetUploadURLTemplate("http://localhost/jmap/upload/{accountId}/"); err != nil {
+		t.Fatalf("SetUploadURLTemplate() error: %v", err)
+	}
+	if _, err := client.uploadURL(); err == nil {
+		t.Fatal("expected rewritten remote HTTP upload URL to be rejected")
+	}
+}
+
+func TestClientUploadURLOverrideRejectedTemplateDoesNotUseInferredFallback(t *testing.T) {
+	client := newTestClient("https://api.example.com/jmap")
+	if err := client.SetAdvertisedHostOverride("jmap.example.com"); err != nil {
+		t.Fatalf("SetAdvertisedHostOverride() error: %v", err)
+	}
+	if err := client.SetUploadURLTemplate("/invalid/{accountId}/"); err == nil {
+		t.Fatal("expected invalid advertised template to be rejected")
+	}
+	if _, err := client.uploadURL(); err == nil {
+		t.Fatal("expected rejected advertised upload URL to fail closed")
+	}
+}
+
 func TestClientUploadURLFallsBackToInferredPath(t *testing.T) {
 	client := newTestClient("https://mail.example.com/jmap/")
 	got, err := client.uploadURL()

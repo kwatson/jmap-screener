@@ -47,6 +47,15 @@ func Run(cfg *config.Config) error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	slog.SetDefault(logger)
 
+	// Create JMAP client and validate endpoint overrides before opening local resources.
+	client := jmap.NewClient(cfg.JMAP.URL, cfg.JMAP.Token, cfg.JMAP.AccountID)
+	if err := client.SetAdvertisedHostOverride(cfg.JMAP.AdvertisedHostOverride); err != nil {
+		return fmt.Errorf("configure jmap advertised host override: %w", err)
+	}
+	if cfg.JMAP.AdvertisedHostOverride != "" {
+		slog.Info("jmap advertised endpoint host override enabled", "host", cfg.JMAP.AdvertisedHostOverride)
+	}
+
 	// Open database
 	database, err := db.Open(cfg.DB.Path)
 	if err != nil {
@@ -59,8 +68,6 @@ func Run(cfg *config.Config) error {
 		return err
 	}
 
-	// Create JMAP client
-	client := jmap.NewClient(cfg.JMAP.URL, cfg.JMAP.Token, cfg.JMAP.AccountID)
 	session := discoverSessionForStartup(client, cfg.JMAP.AccountID)
 	if client.AccountID == "" {
 		return fmt.Errorf("jmap.account_id is not configured and session discovery did not return a primary mail account")
@@ -208,7 +215,7 @@ func discoverSessionForStartup(client *jmap.Client, configuredAccountID string) 
 	}
 	if session.UploadURL != "" {
 		if err := client.SetUploadURLTemplate(session.UploadURL); err != nil {
-			slog.Warn("jmap session uploadUrl invalid, using inferred upload URL", "error", err)
+			slog.Warn("jmap session uploadUrl invalid", "error", err)
 		}
 	}
 	return session
@@ -227,7 +234,16 @@ func startPushWatcher(ctx context.Context, client *jmap.Client, configuredAccoun
 		slog.Info("jmap websocket push unavailable, polling fallback remains active")
 		return
 	}
-	go jmap.WatchPush(ctx, capability.URL, client.Token, configuredAccountID, events, connected, verified)
+	wsURL, err := client.RewriteAdvertisedURL(capability.URL)
+	if err != nil {
+		slog.Warn("jmap websocket endpoint override failed, polling fallback remains active", "error", err)
+		return
+	}
+	if err := jmap.ValidateWebSocketURL(wsURL); err != nil {
+		slog.Warn("jmap websocket endpoint invalid, polling fallback remains active", "error", err)
+		return
+	}
+	go jmap.WatchPush(ctx, wsURL, client.Token, configuredAccountID, events, connected, verified)
 }
 
 func updateHealth(database *db.DB, healthy *atomic.Bool, jmapHealthy bool) {

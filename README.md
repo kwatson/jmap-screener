@@ -110,7 +110,7 @@ docker run -d \
   ghcr.io/kwatson/jmap-screener:latest
 ```
 
-Use a version tag such as `ghcr.io/kwatson/jmap-screener:v0.1.0` if you want to
+Use a version tag such as `ghcr.io/kwatson/jmap-screener:v0.2.0` if you want to
 pin a specific release.
 
 Set `db.path = "/data/screener.db"` in your config so the SQLite database is
@@ -175,6 +175,7 @@ All settings have defaults. Only `jmap.url` and `jmap.token` are required.
 | `jmap.url` | `SCREENER_JMAP_URL` | *required* | Stalwart JMAP API endpoint |
 | `jmap.token` | `SCREENER_JMAP_TOKEN` | *required* | User API token |
 | `jmap.account_id` | `SCREENER_JMAP_ACCOUNT_ID` | auto-discovered | JMAP account identifier |
+| `jmap.advertised_host_override` | `SCREENER_JMAP_ADVERTISED_HOST_OVERRIDE` | disabled | Replace the hostname in upload and WebSocket URLs advertised by JMAP discovery |
 | `jmap.push_enabled` | `SCREENER_JMAP_PUSH_ENABLED` | `true` | Use JMAP WebSocket push to reduce sync latency; polling still runs as fallback |
 | `db.path` | `SCREENER_DB_PATH` | `screener.db` | SQLite database path |
 | `daemon.poll_interval_seconds` | — | `300` | Seconds between fallback JMAP polls |
@@ -187,8 +188,30 @@ All settings have defaults. Only `jmap.url` and `jmap.token` are required.
 | `health.port` | — | `8080` | Health check HTTP port |
 | `logging.level` | — | `info` | `debug`, `info`, `warn`, `error` |
 
-Env vars override config file values. This is useful for Docker secrets or keeping
-tokens out of version-controlled files.
+Non-empty env vars override config file values. This is useful for Docker secrets
+or keeping tokens out of version-controlled files. An empty env var does not clear
+a value set in the config file.
+
+### Split-Host JMAP Discovery
+
+Some proxy or migration setups serve the JMAP API on one hostname while the JMAP
+session advertises upload and WebSocket URLs on another. To keep using session
+discovery but connect those advertised endpoints through the API host, set:
+
+```bash
+export SCREENER_JMAP_URL=https://jmap.example.com/jmap/
+export SCREENER_JMAP_ADVERTISED_HOST_OVERRIDE=jmap.example.com
+```
+
+The override changes only the hostname in the discovered `uploadUrl` and JMAP
+WebSocket capability URL. It does not change `SCREENER_JMAP_URL`, the
+`/.well-known/jmap` request, normal JMAP API calls, or an upload URL inferred when
+discovery is unavailable. Paths, query parameters, schemes, and advertised ports
+are preserved.
+
+The override host receives authenticated requests and Sieve script contents. Use
+only a trusted hostname with a valid TLS certificate. Leaving the setting unset
+preserves the advertised URLs without modification.
 
 ## Sieve Script
 

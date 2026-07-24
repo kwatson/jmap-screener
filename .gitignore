@@ -35,4 +35,7 @@ Thumbs.db
 *.swp
 *.swo
 .opencode/
+.claude/
+.codex/
+.agents/
 
