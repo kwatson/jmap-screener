@@ -68,7 +68,7 @@ func TestMonitorCycleRefreshesNewTargetAndRetriesFailures(t *testing.T) {
 							{ID: "parent", Name: "Work"},
 							{ID: "t", Name: "Cloudpress", ParentID: stringPtr("parent")},
 						}
-						if mailboxCalls == 1 && failure == "missing" {
+						if mailboxCalls <= 2 && failure == "missing" {
 							mailboxes = mailboxes[:3]
 						}
 						if mailboxCalls == 1 && failure == "resolve" {
@@ -86,7 +86,7 @@ func TestMonitorCycleRefreshesNewTargetAndRetriesFailures(t *testing.T) {
 				defer server.Close()
 				client := jmap.NewClient(server.URL, "token", "acc1")
 				var healthy atomic.Bool
-				state, err := runMonitorCycle(cfg, client, database, resolved, map[string]bool{}, "before", &healthy)
+				state, err := runMonitorCycle(cfg, client, database, resolved, "before", &healthy)
 				if failure != "none" {
 					if err == nil || state != "before" {
 						t.Fatalf("failed refresh returned state %q, err %v", state, err)
@@ -103,7 +103,7 @@ func TestMonitorCycleRefreshesNewTargetAndRetriesFailures(t *testing.T) {
 					if _, ok := resolved.Index.ByID["t"]; ok {
 						t.Fatal("failed refresh replaced mailbox index")
 					}
-					state, err = runMonitorCycle(cfg, client, database, resolved, map[string]bool{}, state, &healthy)
+					state, err = runMonitorCycle(cfg, client, database, resolved, state, &healthy)
 				}
 				if err != nil || state != "after" {
 					t.Fatalf("successful refresh returned state %q, err %v", state, err)
@@ -130,7 +130,7 @@ func TestRefreshKnownMailboxesDoesNotFetch(t *testing.T) {
 		http.Error(w, "unexpected request", http.StatusInternalServerError)
 	})
 	defer closeServer()
-	if err := refreshUnknownMailboxes(client, monitorResolvedForWorkflow(), []jmap.Email{monitorEmail("e1", "sender@example.com", "target")}, "Screener", "Junk"); err != nil {
+	if err := refreshUnknownMailboxes(client, openMonitorTestDB(t), monitorResolvedForWorkflow(), []jmap.Email{monitorEmail("e1", "sender@example.com", "target")}, "Screener", "Junk"); err != nil {
 		t.Fatal(err)
 	}
 }

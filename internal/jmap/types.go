@@ -128,6 +128,7 @@ type EmailQueryResponse struct {
 // === Email/set ===
 
 type EmailSetArgs struct {
+	IfInState string                `json:"ifInState,omitempty"`
 	AccountID string                `json:"accountId"`
 	Update    map[string]EmailPatch `json:"update,omitempty"`
 }

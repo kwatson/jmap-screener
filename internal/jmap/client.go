@@ -241,10 +241,28 @@ func (c *Client) QueryEmails(inMailboxID string, position, limit int) ([]string,
 
 // MoveEmail moves an email to the target mailbox by setting its mailboxIds.
 func (c *Client) MoveEmail(emailID, targetMailboxID string) (*SetError, error) {
+	return c.moveEmail(emailID, targetMailboxID, "")
+}
+
+// MoveEmailIfInState refuses to overwrite concurrent changes to the account.
+func (c *Client) MoveEmailIfInState(emailID, targetMailboxID, state string) (*SetError, error) {
+	if state == "" {
+		return nil, fmt.Errorf("conditional email move requires state")
+	}
+	return c.moveEmail(emailID, targetMailboxID, state)
+}
+
+func IsStateMismatch(err error) bool {
+	var methodErr *MethodError
+	return errors.As(err, &methodErr) && methodErr.Type == "stateMismatch"
+}
+
+func (c *Client) moveEmail(emailID, targetMailboxID, state string) (*SetError, error) {
 	req := &Request{
 		Using: []string{CapCore, CapMail},
 		MethodCalls: []MethodCall{
 			{"Email/set", &EmailSetArgs{
+				IfInState: state,
 				AccountID: c.AccountID,
 				Update: map[string]EmailPatch{
 					emailID: {

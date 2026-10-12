@@ -110,7 +110,7 @@ docker run -d \
   ghcr.io/kwatson/jmap-screener:latest
 ```
 
-Use a version tag such as `ghcr.io/kwatson/jmap-screener:v0.2.0` if you want to
+Use a version tag such as `ghcr.io/kwatson/jmap-screener:v0.2.1` if you want to
 pin a specific release.
 
 Set `db.path = "/data/screener.db"` in your config so the SQLite database is

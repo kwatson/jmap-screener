@@ -89,7 +89,7 @@ func Run(cfg *config.Config) error {
 		return fmt.Errorf("discover mailboxes: %w", err)
 	}
 
-	resolved, err := ResolveMailboxes(mailboxes, cfg.Monitor.ScreenerMailbox, cfg.Monitor.JunkMailbox)
+	resolved, err := resolvePersistentMailboxes(database, mailboxes, cfg.Monitor.ScreenerMailbox, cfg.Monitor.JunkMailbox)
 	if err != nil {
 		return fmt.Errorf("resolve mailboxes: %w", err)
 	}
@@ -146,7 +146,6 @@ func Run(cfg *config.Config) error {
 	defer signal.Stop(sigCh)
 
 	// Main loop
-	rescuedByMe := make(map[string]bool)
 	backoff := 1 * time.Second
 	pollInterval := cfg.Daemon.PollInterval()
 	shutdown := func(sig os.Signal) error {
@@ -168,7 +167,7 @@ func Run(cfg *config.Config) error {
 		drainPushEvents(pushEvents)
 
 		var err error
-		state, err = runMonitorCycle(cfg, client, database, resolved, rescuedByMe, state, healthy)
+		state, err = runMonitorCycle(cfg, client, database, resolved, state, healthy)
 		if err != nil {
 			var authErr *jmap.AuthError
 			if errors.As(err, &authErr) {
@@ -259,7 +258,11 @@ func updateHealth(database *db.DB, healthy *atomic.Bool, jmapHealthy bool) {
 	healthy.Store(true)
 }
 
-func runMonitorCycle(cfg *config.Config, client *jmap.Client, database *db.DB, resolved *ResolvedMailboxes, rescuedByMe map[string]bool, state string, healthy *atomic.Bool) (string, error) {
+func runMonitorCycle(cfg *config.Config, client *jmap.Client, database *db.DB, resolved *ResolvedMailboxes, state string, healthy *atomic.Bool) (string, error) {
+	if err := refreshMailboxes(client, database, resolved, cfg.Monitor.ScreenerMailbox, cfg.Monitor.JunkMailbox, nil); err != nil {
+		healthy.Store(false)
+		return state, err
+	}
 	needsReload := false
 	currentState := state
 
@@ -320,7 +323,7 @@ func runMonitorCycle(cfg *config.Config, client *jmap.Client, database *db.DB, r
 				}
 				// Resolve newly created folders before consuming any moves in this batch.
 				// A failed refresh must leave the email state and cached moves retryable.
-				if err := refreshUnknownMailboxes(client, resolved, result.List, cfg.Monitor.ScreenerMailbox, cfg.Monitor.JunkMailbox); err != nil {
+				if err := refreshUnknownMailboxes(client, database, resolved, result.List, cfg.Monitor.ScreenerMailbox, cfg.Monitor.JunkMailbox); err != nil {
 					return state, err
 				}
 				for _, emailID := range result.NotFound {
@@ -340,12 +343,6 @@ func runMonitorCycle(cfg *config.Config, client *jmap.Client, database *db.DB, r
 				}
 
 				for _, emailID := range changes.Changed {
-					// Skip self-inflicted moves (sentry)
-					if rescuedByMe[emailID] {
-						delete(rescuedByMe, emailID)
-						continue
-					}
-
 					email, ok := emailByID[emailID]
 					if !ok {
 						continue // not found in response
@@ -392,7 +389,7 @@ func runMonitorCycle(cfg *config.Config, client *jmap.Client, database *db.DB, r
 
 	// Phase 2: Rescue known senders from Junk
 	if cfg.Rescue.Enabled && resolved.Junk != nil {
-		if _, err := rescueJunkPage(client, database, resolved, rescuedByMe, cfg.Rescue.BatchSize); err != nil {
+		if _, err := rescueJunkPage(client, database, resolved, cfg.Rescue.BatchSize); err != nil {
 			slog.Error("junk rescue failed", "error", err)
 			healthy.Store(false)
 		}
@@ -773,7 +770,7 @@ func deleteRouteIfExists(database *db.DB, sender string) (bool, error) {
 	return true, nil
 }
 
-func rescueJunkPage(client *jmap.Client, database *db.DB, resolved *ResolvedMailboxes, rescuedByMe map[string]bool, batchSize int) (bool, error) {
+func rescueJunkPage(client *jmap.Client, database *db.DB, resolved *ResolvedMailboxes, batchSize int) (bool, error) {
 	if resolved.Junk == nil {
 		return false, nil
 	}
@@ -787,26 +784,27 @@ func rescueJunkPage(client *jmap.Client, database *db.DB, resolved *ResolvedMail
 		if len(ids) == 0 {
 			return movedAny, nil
 		}
-		result, err := client.GetEmailsWithState(ids, "mailboxIds", "from", "sender")
-		if err != nil {
-			return movedAny, fmt.Errorf("email/get for junk rescue: %w", err)
-		}
-		for _, emailID := range result.NotFound {
-			slog.Info("junk query email not found; deleting cache", "email", emailID)
-			if err := database.DeleteEmailCache(emailID); err != nil {
-				return movedAny, err
-			}
-		}
-		emailByID := make(map[string]jmap.Email, len(result.List))
-		for _, email := range result.List {
-			emailByID[email.ID] = email
-		}
-
 		pageMoved := false
 		for _, emailID := range ids {
-			email, ok := emailByID[emailID]
-			if !ok {
+			// Fetch state separately for each candidate: our previous move changes it.
+			result, err := client.GetEmailsWithState([]string{emailID}, "mailboxIds", "from", "sender")
+			if err != nil {
+				return movedAny, fmt.Errorf("email/get for junk rescue: %w", err)
+			}
+			for _, missingID := range result.NotFound {
+				if err := database.DeleteEmailCache(missingID); err != nil {
+					return movedAny, err
+				}
+			}
+			if len(result.List) == 0 {
 				continue
+			}
+			email := result.List[0]
+			if !email.MailboxIDs[resolved.Junk.ID] {
+				continue
+			}
+			if result.State == "" {
+				return movedAny, fmt.Errorf("junk rescue email/get returned empty state")
 			}
 			sender := db.NormalizeSender(extractSender(email))
 			if sender == "" {
@@ -824,7 +822,13 @@ func rescueJunkPage(client *jmap.Client, database *db.DB, resolved *ResolvedMail
 				slog.Warn("skipping junk rescue for missing route target", "sender", sender, "target_mailbox_id", route.TargetMailboxID)
 				continue
 			}
-			setErr, err := client.MoveEmail(emailID, target.ID)
+			if target.ID == resolved.Junk.ID {
+				continue
+			}
+			setErr, err := client.MoveEmailIfInState(emailID, target.ID, result.State)
+			if jmap.IsStateMismatch(err) {
+				return movedAny, nil
+			}
 			if err != nil {
 				return movedAny, fmt.Errorf("rescue move %s: %w", emailID, err)
 			}
@@ -832,7 +836,6 @@ func rescueJunkPage(client *jmap.Client, database *db.DB, resolved *ResolvedMail
 				slog.Warn("rescue move notUpdated", "email", emailID, "type", setErr.Type, "desc", setErr.Description)
 				continue
 			}
-			rescuedByMe[emailID] = true
 			movedAny = true
 			pageMoved = true
 			if err := database.UpsertEmailCache(emailID, []string{target.ID}); err != nil {

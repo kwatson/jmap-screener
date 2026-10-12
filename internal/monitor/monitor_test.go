@@ -768,16 +768,12 @@ func TestRescueJunkPageMovesKnownSenderAndUpdatesCache(t *testing.T) {
 	})
 	defer closeServer()
 
-	rescued := map[string]bool{}
-	moved, err := rescueJunkPage(client, database, resolved, rescued, 10)
+	moved, err := rescueJunkPage(client, database, resolved, 10)
 	if err != nil {
 		t.Fatalf("rescueJunkPage failed: %v", err)
 	}
 	if !moved || !moveSeen {
 		t.Fatalf("expected rescue move, moved=%v moveSeen=%v", moved, moveSeen)
-	}
-	if !rescued["e1"] {
-		t.Fatal("expected self-move marker")
 	}
 	entry, err := database.GetEmailCache("e1")
 	if err != nil {
@@ -856,16 +852,12 @@ func TestRescueJunkPagePaginatesPastUnknownSenders(t *testing.T) {
 	})
 	defer closeServer()
 
-	rescued := map[string]bool{}
-	rescueMoved, err := rescueJunkPage(client, database, resolved, rescued, 1)
+	rescueMoved, err := rescueJunkPage(client, database, resolved, 1)
 	if err != nil {
 		t.Fatalf("rescueJunkPage failed: %v", err)
 	}
 	if !rescueMoved || !moved {
 		t.Fatalf("expected rescue move, rescueMoved=%v moved=%v", rescueMoved, moved)
-	}
-	if !rescued["known"] {
-		t.Fatal("expected known self-move marker")
 	}
 }
 
@@ -911,16 +903,12 @@ func TestRescueJunkPageTerminatesOnNotUpdated(t *testing.T) {
 	})
 	defer closeServer()
 
-	rescued := map[string]bool{}
-	moved, err := rescueJunkPage(client, database, resolved, rescued, 1)
+	moved, err := rescueJunkPage(client, database, resolved, 1)
 	if err != nil {
 		t.Fatalf("rescueJunkPage failed: %v", err)
 	}
 	if moved {
 		t.Fatal("notUpdated should not count as moved")
-	}
-	if rescued["known"] {
-		t.Fatal("notUpdated should not set self-move marker")
 	}
 	if queryCount != 1 {
 		t.Fatalf("queryCount = %d, want 1", queryCount)
