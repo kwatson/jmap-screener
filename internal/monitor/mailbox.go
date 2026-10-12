@@ -34,6 +34,35 @@ type ResolvedMailboxes struct {
 	ScreenerPath string
 }
 
+func refreshUnknownMailboxes(client *jmap.Client, resolved *ResolvedMailboxes, emails []jmap.Email, screenerName, junkName string) error {
+	unknown := make(map[string]bool)
+	for _, email := range emails {
+		for id := range email.MailboxIDs {
+			if _, ok := resolved.Index.ByID[id]; !ok {
+				unknown[id] = true
+			}
+		}
+	}
+	if len(unknown) == 0 {
+		return nil
+	}
+	mailboxes, err := client.GetMailboxes()
+	if err != nil {
+		return fmt.Errorf("refresh mailboxes: %w", err)
+	}
+	updated, err := ResolveMailboxes(mailboxes, screenerName, junkName)
+	if err != nil {
+		return fmt.Errorf("resolve refreshed mailboxes: %w", err)
+	}
+	for id := range unknown {
+		if _, ok := updated.Index.ByID[id]; !ok {
+			return fmt.Errorf("mailbox %q still missing after refresh", id)
+		}
+	}
+	*resolved = *updated
+	return nil
+}
+
 func BuildMailboxIndex(mailboxes []jmap.Mailbox) (*MailboxIndex, error) {
 	raw := make(map[string]jmap.Mailbox, len(mailboxes))
 	for _, mailbox := range mailboxes {

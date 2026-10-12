@@ -318,6 +318,11 @@ func runMonitorCycle(cfg *config.Config, client *jmap.Client, database *db.DB, r
 					changesComplete = false
 					break
 				}
+				// Resolve newly created folders before consuming any moves in this batch.
+				// A failed refresh must leave the email state and cached moves retryable.
+				if err := refreshUnknownMailboxes(client, resolved, result.List, cfg.Monitor.ScreenerMailbox, cfg.Monitor.JunkMailbox); err != nil {
+					return state, err
+				}
 				for _, emailID := range result.NotFound {
 					slog.Info("changed email not found; deleting cache", "email", emailID)
 					if err := database.DeleteEmailCache(emailID); err != nil {
